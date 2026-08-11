@@ -1,0 +1,23 @@
+{
+  "name": "propease-erp",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Propease - Enterprise Real Estate ERP + CRM Platform (white-label, multi-tenant)",
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace backend",
+    "dev:backend": "npm run dev --workspace backend",
+    "dev:frontend": "npm run dev --workspace frontend",
+    "start": "npm run start --workspace backend",
+    "seed": "npm run seed --workspace backend",
+    "build": "npm run build --workspace frontend",
+    "install:all": "npm install",
+    "serve": "npm run build && npm run start"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
