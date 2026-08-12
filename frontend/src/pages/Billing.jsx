@@ -174,7 +174,25 @@ export default function Billing() {
   };
 
   const setItem = (i, field, val) => {
-    setItems((arr) => arr.map((it, idx) => idx === i ? { ...it, [field]: val } : it));
+    setItems((arr) => arr.map((it, idx) => {
+      if (idx !== i) return it;
+      const next = { ...it, [field]: val };
+      if (field === 'qty' || field === 'rate' || field === 'gst_rate') {
+        const t = calcItemTax(next);
+        next.cgst = t.cgst; next.sgst = t.sgst; next.igst = t.igst;
+      }
+      return next;
+    }));
+  };
+
+  const calcItemTax = (it) => {
+    const amt = (Number(it.qty) || 1) * (Number(it.rate) || 0);
+    const buyerState = (() => {
+      const cust = customers.find((c) => c.id === inv.customer_id);
+      return (cust && (cust.state_code || gstStateFromGstin(cust.gstin))) || '';
+    })();
+    const g = gstPreview(amt, Number(it.gst_rate) || 0, buyerState);
+    return { cgst: g.cgst, sgst: g.sgst, igst: g.igst };
   };
 
   const removeItem = (i) => {
@@ -396,9 +414,9 @@ export default function Billing() {
                         <Input type="number" value={it.gst_rate} onChange={(e) => setItem(i, 'gst_rate', e.target.value)} />
                         <Input type="number" value={it.qty} onChange={(e) => setItem(i, 'qty', e.target.value)} />
                         <Input type="number" value={it.rate} onChange={(e) => setItem(i, 'rate', e.target.value)} />
-                        <div style={{ textAlign: 'right', fontWeight: 600, fontSize: 12.5 }}>{sameState ? fmtMoney(g.cgst) : '—'}</div>
-                        <div style={{ textAlign: 'right', fontWeight: 600, fontSize: 12.5 }}>{sameState ? fmtMoney(g.sgst) : '—'}</div>
-                        <div style={{ textAlign: 'right', fontWeight: 600, fontSize: 12.5 }}>{!sameState ? fmtMoney(g.igst) : '—'}</div>
+                        <Input type="number" value={it.cgst ?? ''} onChange={(e) => setItem(i, 'cgst', e.target.value)} placeholder={sameState ? String(g.cgst) : '0'} style={{ textAlign: 'right' }} />
+                        <Input type="number" value={it.sgst ?? ''} onChange={(e) => setItem(i, 'sgst', e.target.value)} placeholder={sameState ? String(g.sgst) : '0'} style={{ textAlign: 'right' }} />
+                        <Input type="number" value={it.igst ?? ''} onChange={(e) => setItem(i, 'igst', e.target.value)} placeholder={!sameState ? String(g.igst) : '0'} style={{ textAlign: 'right' }} />
                         <div style={{ textAlign: 'right', fontWeight: 600, fontSize: 13 }}>{fmtMoney(amt)}</div>
                         <Button sm ghost onClick={() => removeItem(i)}>✕</Button>
                       </div>
@@ -420,8 +438,11 @@ export default function Billing() {
               ? items.reduce((acc, it) => {
                   const t = (Number(it.qty) || 1) * (Number(it.rate) || 0);
                   const ir = Number(it.gst_rate) || 0;
-                  const g = gstPreview(t, ir, buyerState);
-                  return { cgst: acc.cgst + g.cgst, sgst: acc.sgst + g.sgst, igst: acc.igst + g.igst, total: acc.total + g.total, type: g.type };
+                  const hasOv = (it.cgst !== undefined && it.cgst !== '' && it.cgst !== null) || (it.sgst !== undefined && it.sgst !== '' && it.sgst !== null) || (it.igst !== undefined && it.igst !== '' && it.igst !== null);
+                  const g = hasOv
+                    ? { cgst: Number(it.cgst) || 0, sgst: Number(it.sgst) || 0, igst: Number(it.igst) || 0, type: sameState ? 'Intra-state (CGST + SGST)' : 'Inter-state (IGST)' }
+                    : gstPreview(t, ir, buyerState);
+                  return { cgst: acc.cgst + g.cgst, sgst: acc.sgst + g.sgst, igst: acc.igst + g.igst, total: acc.total + g.cgst + g.sgst + g.igst, type: g.type };
                 }, { cgst: 0, sgst: 0, igst: 0, total: 0, type: sameState ? 'Intra-state (CGST + SGST)' : 'Inter-state (IGST)' })
               : gstPreview(Number(inv.amount) || 0, inv.gst, buyerState);
             const base = items.length ? itemsTotal() : (Number(inv.amount) || 0);

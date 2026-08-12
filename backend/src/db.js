@@ -972,6 +972,9 @@ export function initSchema() {
   ensureColumn('customers', 'state_code', 'TEXT');
   ensureColumn('customers', 'gstin', 'TEXT');
   ensureColumn('invoices', 'taxable_amount', 'REAL');
+  ensureColumn('invoice_items', 'cgst', 'REAL DEFAULT 0');
+  ensureColumn('invoice_items', 'sgst', 'REAL DEFAULT 0');
+  ensureColumn('invoice_items', 'igst', 'REAL DEFAULT 0');
   ensureColumn('invoices', 'gst_rate', 'REAL DEFAULT 0');
   ensureColumn('invoices', 'cgst', 'REAL DEFAULT 0');
   ensureColumn('invoices', 'sgst', 'REAL DEFAULT 0');

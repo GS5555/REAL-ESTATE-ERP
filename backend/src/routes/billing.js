@@ -46,6 +46,8 @@ export function gstBreakdown(taxable, rate, supplierState, buyerState) {
 
 // Per-line-item GST: each item's tax = qty x rate x item gst_rate%, then split CGST/SGST/IGST
 // based on supplier/buyer state and aggregate across all items.
+// Items may pass explicit cgst/sgst/igst overrides (editable fields) — those are honored;
+// otherwise the values are auto-calculated from qty x rate x gst_rate.
 export function gstBreakdownItems(items, supplierState, buyerState) {
   let taxable = 0, cgst = 0, sgst = 0, igst = 0, sumRate = 0, count = 0;
   for (const it of items || []) {
@@ -53,7 +55,17 @@ export function gstBreakdownItems(items, supplierState, buyerState) {
     const r = Number(it.rate) || 0;
     const t = q * r;
     taxable += t;
-    const g = gstBreakdown(t, Number(it.gst_rate) || 0, supplierState, buyerState);
+    const hasOverride = ['cgst', 'sgst', 'igst'].some((k) => it[k] !== undefined && it[k] !== null && it[k] !== '');
+    let g;
+    if (hasOverride) {
+      g = {
+        cgst: Math.round(Number(it.cgst) || 0),
+        sgst: Math.round(Number(it.sgst) || 0),
+        igst: Math.round(Number(it.igst) || 0)
+      };
+    } else {
+      g = gstBreakdown(t, Number(it.gst_rate) || 0, supplierState, buyerState);
+    }
     cgst += g.cgst; sgst += g.sgst; igst += g.igst;
     sumRate += Number(it.gst_rate) || 0; count++;
   }
@@ -265,10 +277,15 @@ router.post('/billing/invoices', (req, res) => {
   for (const it of items) {
     const qty = Number(it.qty) || 1;
     const rte = Number(it.rate) || 0;
-    run(`INSERT INTO invoice_items (id, company_id, invoice_id, description, hsn, unit, qty, rate, amount, gst_rate, created_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-      id(), billingCompanyId(req), iid, String(it.description).trim(), it.hsn || null, it.unit || null, qty, rte, qty * rte,
-      Number(it.gst_rate) || 0, ts());
+    const amt = qty * rte;
+    const hasOverride = ['cgst', 'sgst', 'igst'].some((k) => it[k] !== undefined && it[k] !== null && it[k] !== '');
+    const base = hasOverride
+      ? { cgst: Number(it.cgst) || 0, sgst: Number(it.sgst) || 0, igst: Number(it.igst) || 0 }
+      : gstBreakdown(amt, Number(it.gst_rate) || 0, supplierState, buyerState);
+    run(`INSERT INTO invoice_items (id, company_id, invoice_id, description, hsn, unit, qty, rate, amount, gst_rate, cgst, sgst, igst, created_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      id(), billingCompanyId(req), iid, String(it.description).trim(), it.hsn || null, it.unit || null, qty, rte, amt,
+      Number(it.gst_rate) || 0, Math.round(base.cgst) || 0, Math.round(base.sgst) || 0, Math.round(base.igst) || 0, ts());
   }
   audit({ company_id: billingCompanyId(req), user_id: req.user.id, user_name: req.user.name, action: 'invoice.create', entity: 'invoice', entity_id: iid, detail: { number, gst_type: g.gst_type, items: items.length } });
   res.json({ ok: true, id: iid, number, ...g, items: items.length });
@@ -303,14 +320,18 @@ router.get('/billing/invoices/:id/pdf', (req, res) => {
       Rate: `₹${rte}`,
       Taxable: `₹${taxable}`
     };
-    if (isIntra) {
-      const half = Math.round(gst / 2);
-      row.CGST = `${gstRate}% ₹${half}`;
-      row.SGST = `${gstRate}% ₹${gst - half}`;
+    const hasStored = ['cgst', 'sgst', 'igst'].some((k) => it[k] !== undefined && it[k] !== null && Number(it[k]) !== 0);
+    const storedTax = (Number(it.cgst) || 0) + (Number(it.sgst) || 0) + (Number(it.igst) || 0);
+    if (isIntra || hasStored) {
+      const half = hasStored ? (Number(it.cgst) || 0) : Math.round(gst / 2);
+      const s = hasStored ? (Number(it.sgst) || 0) : gst - half;
+      row.CGST = hasStored ? `₹${half}` : `${gstRate}% ₹${half}`;
+      row.SGST = hasStored ? `₹${s}` : `${gstRate}% ₹${s}`;
+      if (Number(it.igst) || 0) row.IGST = `₹${Number(it.igst) || 0}`;
     } else {
       row.IGST = `${gstRate}% ₹${gst}`;
     }
-    row.Total = `₹${taxable + gst}`;
+    row.Total = `₹${taxable + (hasStored ? storedTax : gst)}`;
     return row;
   };
   const itemRows = invItems.length
