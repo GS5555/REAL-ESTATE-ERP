@@ -289,16 +289,33 @@ router.get('/billing/invoices/:id/pdf', (req, res) => {
   const igst = Number(inv.igst) || (Number(inv.gst_type) === 'inter' ? Math.round(taxable * rate / 100) : 0);
   const gstTotal = cgst + sgst + igst;
   const invItems = all('SELECT * FROM invoice_items WHERE invoice_id=? ORDER BY created_at', inv.id);
-  const itemRows = invItems.length
-    ? invItems.map((it) => ({
-      'Sl No': invItems.indexOf(it) + 1,
+  // GST-compliant line items: taxable per item, then CGST/SGST split for intra-state
+  // or a single IGST column for inter-state (out-of-Maharashtra / different state).
+  const isIntra = String(inv.gst_type) === 'intra';
+  const buildItem = (it, idx, qty, rte, gstRate) => {
+    const taxable = qty * rte;
+    const gst = Math.round(taxable * gstRate / 100);
+    const row = {
+      'Sl No': idx,
       Description: it.description,
       HSN: it.hsn || '',
-      Qty: Number(it.qty) || 1,
-      Rate: `₹${Number(it.rate) || 0}`,
-      Amount: `₹${Number(it.amount) || 0}`
-    }))
-    : [{ 'Sl No': 1, Description: 'Booking / service charge', HSN: '', Qty: 1, Rate: `₹${taxable}`, Amount: `₹${taxable}` }];
+      Qty: qty,
+      Rate: `₹${rte}`,
+      Taxable: `₹${taxable}`
+    };
+    if (isIntra) {
+      const half = Math.round(gst / 2);
+      row.CGST = `${gstRate}% ₹${half}`;
+      row.SGST = `${gstRate}% ₹${gst - half}`;
+    } else {
+      row.IGST = `${gstRate}% ₹${gst}`;
+    }
+    row.Total = `₹${taxable + gst}`;
+    return row;
+  };
+  const itemRows = invItems.length
+    ? invItems.map((it, i) => buildItem(it, i + 1, Number(it.qty) || 1, Number(it.rate) || 0, Number(it.gst_rate) || 0))
+    : [buildItem({ description: 'Booking / service charge', hsn: '' }, 1, 1, taxable, rate)];
   const taxRows = [];
   if (gstTotal > 0) {
     if (cgst + sgst > 0) {

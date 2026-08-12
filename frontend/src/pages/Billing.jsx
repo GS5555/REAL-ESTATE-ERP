@@ -487,7 +487,17 @@ function InvoicePreview({ inv, company, onClose }) {
   const gstTotal = cgst + sgst + igst;
   const invItems = Array.isArray(inv.items) && inv.items.length
     ? inv.items
-    : [{ Description: (inv.booking_ref || inv.unit_number) ? `Booking reference ${inv.booking_ref || ''}${inv.unit_number ? ' · Unit ' + inv.unit_number : ''}` : 'Booking / service charge', qty: 1, rate: taxable, amount: taxable }];
+    : [{ Description: (inv.booking_ref || inv.unit_number) ? `Booking reference ${inv.booking_ref || ''}${inv.unit_number ? ' · Unit ' + inv.unit_number : ''}` : 'Booking / service charge', hsn: '', qty: 1, rate: taxable, amount: taxable, gst_rate: rate }];
+  const isIntra = String(inv.gst_type) === 'intra';
+  const gstRateOf = (it) => Number(it.gst_rate) || rate;
+  const itemTax = (it) => {
+    const qty = Number(it.qty) || 1;
+    const rte = Number(it.rate) || 0;
+    const amt = it.amount != null ? Number(it.amount) : qty * rte;
+    const g = Math.round(amt * gstRateOf(it) / 100);
+    const half = Math.round(g / 2);
+    return { amt, g, half };
+  };
 
   return (
     <Modal title={inv.number} onClose={onClose} wide footer={<>
@@ -529,19 +539,31 @@ function InvoicePreview({ inv, company, onClose }) {
       </div>
 
       <Card pad={false}>
-        <div style={{ display: 'grid', gridTemplateColumns: '40px 2fr 60px 90px 1fr 1fr', padding: '10px 14px', background: 'var(--bg-soft, #f6f8fb)', fontWeight: 700, fontSize: 12.5, borderBottom: '1px solid var(--border)' }}>
-          <div>Sl</div><div>DESCRIPTION</div><div>HSN</div><div>QTY</div><div style={{ textAlign: 'right' }}>RATE</div><div style={{ textAlign: 'right' }}>AMOUNT</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '36px 1.6fr 50px 50px 70px 1fr 1fr 1fr 1fr', padding: '10px 12px', background: 'var(--bg-soft, #f6f8fb)', fontWeight: 700, fontSize: 12, borderBottom: '1px solid var(--border)' }}>
+          <div>Sl</div><div>DESCRIPTION</div><div>HSN</div><div>QTY</div><div style={{ textAlign: 'right' }}>RATE</div><div style={{ textAlign: 'right' }}>TAXABLE</div>
+          {isIntra ? (<><div style={{ textAlign: 'right' }}>CGST</div><div style={{ textAlign: 'right' }}>SGST</div></>) : <div style={{ textAlign: 'right' }}>IGST</div>}
+          <div style={{ textAlign: 'right' }}>TOTAL</div>
         </div>
-        {invItems.map((r, i) => (
-          <div key={i} style={{ display: 'grid', gridTemplateColumns: '40px 2fr 60px 90px 1fr 1fr', padding: '10px 14px', borderBottom: '1px solid var(--border)', fontSize: 13 }}>
-            <div className="muted">{i + 1}</div>
-            <div>{r.Description || r.description}</div>
-            <div className="muted">{r.hsn || ''}</div>
-            <div>{r.qty ?? 1}</div>
-            <div style={{ textAlign: 'right' }}>{fmtMoney(r.rate)}</div>
-            <div style={{ textAlign: 'right', fontWeight: 600 }}>{fmtMoney(r.amount != null ? r.amount : (r.qty || 1) * (r.rate || 0))}</div>
-          </div>
-        ))}
+        {invItems.map((r, i) => {
+          const t = itemTax(r);
+          return (
+            <div key={i} style={{ display: 'grid', gridTemplateColumns: '36px 1.6fr 50px 50px 70px 1fr 1fr 1fr 1fr', padding: '10px 12px', borderBottom: '1px solid var(--border)', fontSize: 12.5 }}>
+              <div className="muted">{i + 1}</div>
+              <div>{r.Description || r.description}</div>
+              <div className="muted">{r.hsn || ''}</div>
+              <div>{r.qty ?? 1}</div>
+              <div style={{ textAlign: 'right' }}>{fmtMoney(r.rate)}</div>
+              <div style={{ textAlign: 'right' }}>{fmtMoney(t.amt)}</div>
+              {isIntra ? (<>
+                <div style={{ textAlign: 'right' }}>{fmtMoney(t.half)}<div className="small muted">{gstRateOf(r)}%</div></div>
+                <div style={{ textAlign: 'right' }}>{fmtMoney(t.g - t.half)}<div className="small muted">{gstRateOf(r)}%</div></div>
+              </>) : (
+                <div style={{ textAlign: 'right' }}>{fmtMoney(t.g)}<div className="small muted">{gstRateOf(r)}%</div></div>
+              )}
+              <div style={{ textAlign: 'right', fontWeight: 600 }}>{fmtMoney(t.amt + t.g)}</div>
+            </div>
+          );
+        })}
         <div style={{ padding: '10px 14px', fontSize: 12.5 }}>
           {rate > 0 && <div className="flex between"><span>Subtotal</span><span>{fmtMoney(taxable)}</span></div>}
           {rate > 0 && (cgst + sgst > 0) && <div className="flex between"><span>CGST</span><span>{fmtMoney(cgst)}</span></div>}
