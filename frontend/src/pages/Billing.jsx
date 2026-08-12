@@ -378,20 +378,33 @@ export default function Billing() {
               <div className="small muted" style={{ padding: '8px 0' }}>No line items — add items from particulars, create a new particular, or add a manual line. Amount & GST auto-calc from qty × rate.</div>
             ) : (
               <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '3fr 56px 60px 1fr 1fr 1fr 32px', gap: 6, padding: '8px 10px', background: 'var(--bg-soft, #f6f8fb)', fontWeight: 700, fontSize: 12 }}>
-                  <div>Description</div><div>HSN</div><div>GST%</div><div>Qty</div><div>Rate (₹)</div><div style={{ textAlign: 'right' }}>Amount</div><div />
+                <div style={{ display: 'grid', gridTemplateColumns: '2.4fr 52px 56px 56px 1fr 1fr 1fr 1fr 1fr 32px', gap: 6, padding: '8px 10px', background: 'var(--bg-soft, #f6f8fb)', fontWeight: 700, fontSize: 12 }}>
+                  <div>Description</div><div>HSN</div><div>GST%</div><div>Qty</div><div>Rate (₹)</div><div style={{ textAlign: 'right' }}>CGST</div><div style={{ textAlign: 'right' }}>SGST</div><div style={{ textAlign: 'right' }}>IGST</div><div style={{ textAlign: 'right' }}>Amount</div><div />
                 </div>
-                {items.map((it, i) => (
-                  <div key={it._id} style={{ display: 'grid', gridTemplateColumns: '3fr 56px 60px 1fr 1fr 1fr 32px', gap: 6, padding: '6px 10px', borderTop: '1px solid var(--border)', alignItems: 'center' }}>
-                    <Input value={it.description} onChange={(e) => setItem(i, 'description', e.target.value)} placeholder="Describe the item / service…" />
-                    <Input value={it.hsn} onChange={(e) => setItem(i, 'hsn', e.target.value)} />
-                    <Input type="number" value={it.gst_rate} onChange={(e) => setItem(i, 'gst_rate', e.target.value)} />
-                    <Input type="number" value={it.qty} onChange={(e) => setItem(i, 'qty', e.target.value)} />
-                    <Input type="number" value={it.rate} onChange={(e) => setItem(i, 'rate', e.target.value)} />
-                    <div style={{ textAlign: 'right', fontWeight: 600, fontSize: 13 }}>{fmtMoney((Number(it.qty) || 1) * (Number(it.rate) || 0))}</div>
-                    <Button sm ghost onClick={() => removeItem(i)}>✕</Button>
-                  </div>
-                ))}
+                {(() => {
+                  const cust = customers.find((c) => c.id === inv.customer_id);
+                  const buyerState = (cust && (cust.state_code || gstStateFromGstin(cust.gstin))) || '';
+                  const sameState = buyerState === '27';
+                  return items.map((it, i) => {
+                    const amt = (Number(it.qty) || 1) * (Number(it.rate) || 0);
+                    const ir = Number(it.gst_rate) || 0;
+                    const g = gstPreview(amt, ir, buyerState);
+                    return (
+                      <div key={it._id} style={{ display: 'grid', gridTemplateColumns: '2.4fr 52px 56px 56px 1fr 1fr 1fr 1fr 1fr 32px', gap: 6, padding: '6px 10px', borderTop: '1px solid var(--border)', alignItems: 'center' }}>
+                        <Input value={it.description} onChange={(e) => setItem(i, 'description', e.target.value)} placeholder="Describe the item / service…" />
+                        <Input value={it.hsn} onChange={(e) => setItem(i, 'hsn', e.target.value)} />
+                        <Input type="number" value={it.gst_rate} onChange={(e) => setItem(i, 'gst_rate', e.target.value)} />
+                        <Input type="number" value={it.qty} onChange={(e) => setItem(i, 'qty', e.target.value)} />
+                        <Input type="number" value={it.rate} onChange={(e) => setItem(i, 'rate', e.target.value)} />
+                        <div style={{ textAlign: 'right', fontWeight: 600, fontSize: 12.5 }}>{sameState ? fmtMoney(g.cgst) : '—'}</div>
+                        <div style={{ textAlign: 'right', fontWeight: 600, fontSize: 12.5 }}>{sameState ? fmtMoney(g.sgst) : '—'}</div>
+                        <div style={{ textAlign: 'right', fontWeight: 600, fontSize: 12.5 }}>{!sameState ? fmtMoney(g.igst) : '—'}</div>
+                        <div style={{ textAlign: 'right', fontWeight: 600, fontSize: 13 }}>{fmtMoney(amt)}</div>
+                        <Button sm ghost onClick={() => removeItem(i)}>✕</Button>
+                      </div>
+                    );
+                  });
+                })()}
                 <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 10px', borderTop: '1px solid var(--border)', background: 'var(--bg-soft, #f6f8fb)', fontWeight: 700, fontSize: 13 }}>
                   <span>Subtotal (taxable)</span><span>{fmtMoney(itemsTotal())}</span>
                 </div>
