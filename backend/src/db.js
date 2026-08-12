@@ -303,6 +303,32 @@ export function initSchema() {
     created_at TEXT NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS invoice_items (
+    id TEXT PRIMARY KEY,
+    company_id TEXT NOT NULL,
+    invoice_id TEXT,
+    description TEXT,
+    hsn TEXT,
+    unit TEXT,
+    qty REAL DEFAULT 1,
+    rate REAL DEFAULT 0,
+    amount REAL DEFAULT 0,
+    gst_rate REAL DEFAULT 0,
+    created_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS particulars (
+    id TEXT PRIMARY KEY,
+    company_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    hsn TEXT,
+    unit TEXT,
+    rate REAL DEFAULT 0,
+    gst_rate REAL DEFAULT 0,
+    created_at TEXT NOT NULL
+  );
+
   CREATE TABLE IF NOT EXISTS vendors (
     id TEXT PRIMARY KEY,
     company_id TEXT NOT NULL,

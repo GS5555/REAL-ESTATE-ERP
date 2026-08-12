@@ -54,6 +54,11 @@ export default function Billing() {
   const [cfg, setCfg] = useState({ builders: false, vendors: false, customers: false, channels: { email: true, whatsapp: true, sms: true, pdf: true } });
   const [company, setCompany] = useState(null);
   const [preview, setPreview] = useState(null);
+  const [particulars, setParticulars] = useState([]);
+  const [partModal, setPartModal] = useState(false);
+  const [part, setPart] = useState({ name: '', hsn: '', unit: '', rate: '', gst_rate: '18' });
+  const [partFromInvoice, setPartFromInvoice] = useState(false);
+  const [items, setItems] = useState([]);
 
   const loadCompany = () => {
     api.get('/settings').then((co) => setCompany(co)).catch(() => {});
@@ -68,6 +73,9 @@ export default function Billing() {
     api.get('/billing/invoices', { status: invStatus, from: invFrom, to: invTo }).then(setInvoices).catch(() => {});
     api.get('/billing/reminders/pending').then(setReminders).catch(() => {});
     api.get('/billing/reminders/logs').then(setLogs).catch(() => {});
+  };
+  const loadParticulars = () => {
+    api.get('/billing/particulars').then(setParticulars).catch(() => {});
   };
   const loadVendors = () => {
     api.get('/billing/vendors').then(setVendors).catch(() => {});
@@ -84,17 +92,18 @@ export default function Billing() {
   };
   useEffect(() => { load(); loadCfg(); }, [invStatus, invFrom, invTo]);
   useEffect(() => { api.get('/customers').then((d) => setCustomers(d.items || [])).catch(() => {}); }, []);
-  useEffect(() => { if (tab === 'vendors') loadVendors(); if (tab === 'reminders') { api.get('/billing/reminders/pending').then(setReminders).catch(() => {}); api.get('/billing/reminders/logs').then(setLogs).catch(() => {}); } }, [tab]);
+  useEffect(() => { if (tab === 'vendors') loadVendors(); if (tab === 'particulars') loadParticulars(); if (tab === 'reminders') { api.get('/billing/reminders/pending').then(setReminders).catch(() => {}); api.get('/billing/reminders/logs').then(setLogs).catch(() => {}); } }, [tab]);
 
   const createInvoice = async () => {
     if (!inv.customer_id) return toast('Pick a customer', 'error');
     try {
       const body = { ...inv, amount: Number(inv.amount) || 0 };
+      if (items.length) body.items = items.map(({ _id, ...it }) => ({ ...it, qty: Number(it.qty) || 1, rate: Number(it.rate) || 0 }));
       const cust = customers.find((c) => c.id === inv.customer_id);
       if (cust && cust.gstin) body.customer_gstin = cust.gstin;
       if (cust && cust.state_code) body.buyer_state_code = cust.state_code;
       await api.post('/billing/invoices', body);
-      setInvModal(false); setInv({ customer_id: '', number: '', amount: '', gst: '18', due_date: '' });
+      setInvModal(false); setInv({ customer_id: '', number: '', amount: '', gst: '18', due_date: '' }); setItems([]);
       load(); toast('Invoice created', 'success');
     } catch (e) { toast(e.message, 'error'); }
   };
@@ -133,18 +142,61 @@ export default function Billing() {
 
   const tabs = [
     { key: 'invoices', label: 'Invoices' },
+    { key: 'particulars', label: 'Particulars' },
     { key: 'vendors', label: 'Vendors' },
     { key: 'reminders', label: 'Reminders' },
     { key: 'config', label: 'Config' }
   ];
+
+  const savePart = async () => {
+    if (!part.name) return toast('Name required', 'error');
+    const body = { ...part, rate: Number(part.rate) || 0, gst_rate: Number(part.gst_rate) || 0 };
+    try {
+      if (part.id) await api.patch(`/billing/particulars/${part.id}`, body);
+      else await api.post('/billing/particulars', body);
+      if (partFromInvoice && !part.id) addItem({ ...body });
+      setPartModal(false); setPart({ name: '', hsn: '', unit: '', rate: '', gst_rate: '18' }); setPartFromInvoice(false); loadParticulars();
+      toast(part.id ? 'Particular updated' : 'Particular added', 'success');
+    } catch (e) { toast(e.message, 'error'); }
+  };
+
+  const deletePart = async (p) => {
+    try { await api.del(`/billing/particulars/${p.id}`); loadParticulars(); toast('Particular removed', 'success'); }
+    catch (e) { toast(e.message, 'error'); }
+  };
+
+  const addItem = (p) => {
+    setItems((arr) => [...arr, { description: p.name, hsn: p.hsn || '', unit: p.unit || '', qty: '1', rate: String(p.rate || ''), gst_rate: String(p.gst_rate || '18'), _id: Date.now() + Math.random() }]);
+  };
+
+  const addManualItem = () => {
+    setItems((arr) => [...arr, { description: '', hsn: '', unit: '', qty: '1', rate: '', gst_rate: String(inv.gst || '18'), _id: Date.now() + Math.random() }]);
+  };
+
+  const setItem = (i, field, val) => {
+    setItems((arr) => arr.map((it, idx) => idx === i ? { ...it, [field]: val } : it));
+  };
+
+  const removeItem = (i) => {
+    setItems((arr) => arr.filter((_, idx) => idx !== i));
+  };
+
+  const itemsTotal = () => items.reduce((s, it) => s + (Number(it.qty) || 1) * (Number(it.rate) || 0), 0);
+
+  const openNewInvoice = () => {
+    setInv({ customer_id: '', number: '', amount: '', gst: '18', due_date: '' });
+    setItems([]);
+    setInvModal(true);
+  };
 
   return (
     <div>
       <div className="toolbar">
         <h2 style={{ fontSize: 20 }}>Billing & Invoices</h2>
         <div className="grow" />
-        {tab === 'invoices' && <Button variant="primary" onClick={() => setInvModal(true)}>+ New Invoice</Button>}
+        {tab === 'invoices' && <Button variant="primary" onClick={openNewInvoice}>+ New Invoice</Button>}
         {tab === 'invoices' && can('billing.export') && <Button onClick={() => api.download('/billing/invoices/export/csv').catch((e) => toast(e.message, 'error'))}>⤓ Export</Button>}
+        {tab === 'particulars' && <Button variant="primary" onClick={() => { setPart({ name: '', hsn: '', unit: '', rate: '', gst_rate: '18' }); setPartModal(true); }}>+ Add Particular</Button>}
         {tab === 'vendors' && <Button variant="primary" onClick={() => { setVendor({}); setVendorModal(true); }}>+ Add Vendor</Button>}
       </div>
       <Tabs tabs={tabs} active={tab} onChange={setTab} />
@@ -164,6 +216,29 @@ export default function Billing() {
                   <div className="flex gap">
                     <Button sm ghost onClick={() => { setVendor(r); setVendorModal(true); }}>Edit</Button>
                     <Button sm ghost onClick={() => deleteVendor(r)}>Delete</Button>
+                  </div>
+                ) }
+              ]}
+            />
+          )}
+        </Card>
+      )}
+
+      {tab === 'particulars' && (
+        <Card pad={false}>
+          {particulars.length === 0 ? <Empty text="No particulars yet — add products & services with their rates to use on invoices" /> : (
+            <DataTable
+              rows={particulars}
+              columns={[
+                { key: 'name', label: 'Name', render: (r) => <div><b>{r.name}</b>{r.description && <div className="small muted">{r.description}</div>}</div> },
+                { key: 'hsn', label: 'HSN' },
+                { key: 'unit', label: 'Unit', render: (r) => r.unit || '—' },
+                { key: 'rate', label: 'Rate', render: (r) => fmtMoney(r.rate) },
+                { key: 'gst_rate', label: 'GST %', render: (r) => `${r.gst_rate || 0}%` },
+                { key: 'actions', label: '', render: (r) => (
+                  <div className="flex gap">
+                    <Button sm ghost onClick={() => { setPart(r); setPartModal(true); }}>Edit</Button>
+                    <Button sm ghost onClick={() => deletePart(r)}>Delete</Button>
                   </div>
                 ) }
               ]}
@@ -270,7 +345,7 @@ export default function Billing() {
       )}
 
       {invModal && (
-        <Modal title="New Invoice" onClose={() => setInvModal(false)} footer={<>
+        <Modal title="New Invoice" onClose={() => setInvModal(false)} wide footer={<>
           <Button onClick={() => setInvModal(false)}>Cancel</Button>
           <Button variant="primary" onClick={createInvoice} disabled={!inv.customer_id}>Create</Button>
         </>}>
@@ -282,14 +357,61 @@ export default function Billing() {
               </Select>
             </Field>
             <Field label="Number"><Input value={inv.number} onChange={(e) => setInv({ ...inv, number: e.target.value })} placeholder="INV-…" /></Field>
-            <Field label="Taxable Amount (₹)"><Input type="number" value={inv.amount} onChange={(e) => setInv({ ...inv, amount: e.target.value })} /></Field>
+            <Field label="Taxable Amount (₹) — used when no items"><Input type="number" value={inv.amount} onChange={(e) => setInv({ ...inv, amount: e.target.value })} /></Field>
             <Field label="GST Rate (%)"><Input type="number" value={inv.gst} onChange={(e) => setInv({ ...inv, gst: e.target.value })} /></Field>
             <Field label="Due date"><Input type="date" value={inv.due_date} onChange={(e) => setInv({ ...inv, due_date: e.target.value })} /></Field>
           </div>
+
+          <div className="mt">
+            <div className="flex between items-center mb" style={{ marginBottom: 8 }}>
+              <b style={{ fontSize: 13 }}>Particulars / Line Items</b>
+              <div className="flex gap">
+                <Select value="" onChange={(e) => { const v = e.target.value; if (v === '__new__') { setPart({ name: '', hsn: '', unit: '', rate: '', gst_rate: String(inv.gst || '18') }); setPartFromInvoice(true); setPartModal(true); } else { const p = particulars.find((x) => x.id === v); if (p) addItem(p); } }} style={{ width: 220 }}>
+                  <option value="">＋ Add from particulars…</option>
+                  <option value="__new__">＋ New particular…</option>
+                  {particulars.map((p) => <option key={p.id} value={p.id}>{p.name} — ₹{p.rate}{p.unit ? ` / ${p.unit}` : ''}</option>)}
+                </Select>
+                <Button sm variant="ghost" onClick={addManualItem}>＋ Manual item</Button>
+              </div>
+            </div>
+            {items.length === 0 ? (
+              <div className="small muted" style={{ padding: '8px 0' }}>No line items — add items from particulars, create a new particular, or add a manual line. Amount & GST auto-calc from qty × rate.</div>
+            ) : (
+              <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '3fr 56px 60px 1fr 1fr 1fr 32px', gap: 6, padding: '8px 10px', background: 'var(--bg-soft, #f6f8fb)', fontWeight: 700, fontSize: 12 }}>
+                  <div>Description</div><div>HSN</div><div>GST%</div><div>Qty</div><div>Rate (₹)</div><div style={{ textAlign: 'right' }}>Amount</div><div />
+                </div>
+                {items.map((it, i) => (
+                  <div key={it._id} style={{ display: 'grid', gridTemplateColumns: '3fr 56px 60px 1fr 1fr 1fr 32px', gap: 6, padding: '6px 10px', borderTop: '1px solid var(--border)', alignItems: 'center' }}>
+                    <Input value={it.description} onChange={(e) => setItem(i, 'description', e.target.value)} placeholder="Describe the item / service…" />
+                    <Input value={it.hsn} onChange={(e) => setItem(i, 'hsn', e.target.value)} />
+                    <Input type="number" value={it.gst_rate} onChange={(e) => setItem(i, 'gst_rate', e.target.value)} />
+                    <Input type="number" value={it.qty} onChange={(e) => setItem(i, 'qty', e.target.value)} />
+                    <Input type="number" value={it.rate} onChange={(e) => setItem(i, 'rate', e.target.value)} />
+                    <div style={{ textAlign: 'right', fontWeight: 600, fontSize: 13 }}>{fmtMoney((Number(it.qty) || 1) * (Number(it.rate) || 0))}</div>
+                    <Button sm ghost onClick={() => removeItem(i)}>✕</Button>
+                  </div>
+                ))}
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 10px', borderTop: '1px solid var(--border)', background: 'var(--bg-soft, #f6f8fb)', fontWeight: 700, fontSize: 13 }}>
+                  <span>Subtotal (taxable)</span><span>{fmtMoney(itemsTotal())}</span>
+                </div>
+              </div>
+            )}
+          </div>
+
           {(() => {
             const cust = customers.find((c) => c.id === inv.customer_id);
             const buyerState = (cust && (cust.state_code || gstStateFromGstin(cust.gstin))) || '';
-            const p = gstPreview(inv.amount, inv.gst, buyerState);
+            const sameState = buyerState === '27';
+            const p = items.length
+              ? items.reduce((acc, it) => {
+                  const t = (Number(it.qty) || 1) * (Number(it.rate) || 0);
+                  const ir = Number(it.gst_rate) || 0;
+                  const g = gstPreview(t, ir, buyerState);
+                  return { cgst: acc.cgst + g.cgst, sgst: acc.sgst + g.sgst, igst: acc.igst + g.igst, total: acc.total + g.total, type: g.type };
+                }, { cgst: 0, sgst: 0, igst: 0, total: 0, type: sameState ? 'Intra-state (CGST + SGST)' : 'Inter-state (IGST)' })
+              : gstPreview(Number(inv.amount) || 0, inv.gst, buyerState);
+            const base = items.length ? itemsTotal() : (Number(inv.amount) || 0);
             return (
               <div className="mt" style={{ background: 'var(--bg-soft, #f6f8fb)', borderRadius: 8, padding: '10px 14px', fontSize: 13 }}>
                 <div className="flex between"><span className="muted">Supplier state</span><span>27 (Maharashtra)</span></div>
@@ -301,7 +423,7 @@ export default function Billing() {
                 </>) : (
                   <div className="flex between"><span className="muted">IGST</span><span>₹{p.igst}</span></div>
                 )}
-                <div className="flex between" style={{ fontWeight: 700 }}><span>Total</span><span>₹{(Number(inv.amount) || 0) + p.total}</span></div>
+                <div className="flex between" style={{ fontWeight: 700 }}><span>Total</span><span>₹{base + p.total}</span></div>
               </div>
             );
           })()}
@@ -333,6 +455,22 @@ export default function Billing() {
           </div>
         </Modal>
       )}
+
+      {partModal && (
+        <Modal title={part.id ? 'Edit Particular' : 'Add Particular'} onClose={() => setPartModal(false)} footer={<>
+          <Button onClick={() => setPartModal(false)}>Cancel</Button>
+          <Button variant="primary" onClick={savePart} disabled={!part.name}>Save</Button>
+        </>}>
+          <div className="frm-grid">
+            <Field label="Name" full><Input value={part.name || ''} onChange={(e) => setPart({ ...part, name: e.target.value })} placeholder="e.g. Flat Interior Painting" /></Field>
+            <Field label="Description" full><Input value={part.description || ''} onChange={(e) => setPart({ ...part, description: e.target.value })} /></Field>
+            <Field label="HSN Code"><Input value={part.hsn || ''} onChange={(e) => setPart({ ...part, hsn: e.target.value })} placeholder="e.g. 3208" /></Field>
+            <Field label="Unit"><Input value={part.unit || ''} onChange={(e) => setPart({ ...part, unit: e.target.value })} placeholder="Sq Ft / Set / Each" /></Field>
+            <Field label="Rate (₹)"><Input type="number" value={part.rate || ''} onChange={(e) => setPart({ ...part, rate: e.target.value })} /></Field>
+            <Field label="GST Rate (%)"><Input type="number" value={part.gst_rate || ''} onChange={(e) => setPart({ ...part, gst_rate: e.target.value })} /></Field>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -347,9 +485,9 @@ function InvoicePreview({ inv, company, onClose }) {
   const sgst = Number(inv.sgst) || 0;
   const igst = Number(inv.igst) || 0;
   const gstTotal = cgst + sgst + igst;
-  const lineItems = (inv.booking_ref || inv.unit_number)
-    ? [{ Description: `Booking reference ${inv.booking_ref || ''}${inv.unit_number ? ' · Unit ' + inv.unit_number : ''}`, Amount: taxable }]
-    : [{ Description: 'Booking / service charge', Amount: taxable }];
+  const invItems = Array.isArray(inv.items) && inv.items.length
+    ? inv.items
+    : [{ Description: (inv.booking_ref || inv.unit_number) ? `Booking reference ${inv.booking_ref || ''}${inv.unit_number ? ' · Unit ' + inv.unit_number : ''}` : 'Booking / service charge', qty: 1, rate: taxable, amount: taxable }];
 
   return (
     <Modal title={inv.number} onClose={onClose} wide footer={<>
@@ -391,16 +529,22 @@ function InvoicePreview({ inv, company, onClose }) {
       </div>
 
       <Card pad={false}>
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', padding: '10px 14px', background: 'var(--bg-soft, #f6f8fb)', fontWeight: 700, fontSize: 12.5, borderBottom: '1px solid var(--border)' }}>
-          <div>DESCRIPTION</div><div style={{ textAlign: 'right' }}>AMOUNT</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '40px 2fr 60px 90px 1fr 1fr', padding: '10px 14px', background: 'var(--bg-soft, #f6f8fb)', fontWeight: 700, fontSize: 12.5, borderBottom: '1px solid var(--border)' }}>
+          <div>Sl</div><div>DESCRIPTION</div><div>HSN</div><div>QTY</div><div style={{ textAlign: 'right' }}>RATE</div><div style={{ textAlign: 'right' }}>AMOUNT</div>
         </div>
-        {lineItems.map((r, i) => (
-          <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', padding: '10px 14px', borderBottom: '1px solid var(--border)', fontSize: 13 }}>
-            <div>{r.Description}</div><div style={{ textAlign: 'right' }}>{fmtMoney(r.Amount)}</div>
+        {invItems.map((r, i) => (
+          <div key={i} style={{ display: 'grid', gridTemplateColumns: '40px 2fr 60px 90px 1fr 1fr', padding: '10px 14px', borderBottom: '1px solid var(--border)', fontSize: 13 }}>
+            <div className="muted">{i + 1}</div>
+            <div>{r.Description || r.description}</div>
+            <div className="muted">{r.hsn || ''}</div>
+            <div>{r.qty ?? 1}</div>
+            <div style={{ textAlign: 'right' }}>{fmtMoney(r.rate)}</div>
+            <div style={{ textAlign: 'right', fontWeight: 600 }}>{fmtMoney(r.amount != null ? r.amount : (r.qty || 1) * (r.rate || 0))}</div>
           </div>
         ))}
         <div style={{ padding: '10px 14px', fontSize: 12.5 }}>
-          {rate > 0 && <div className="flex between"><span>CGST</span><span>{fmtMoney(cgst)}</span></div>}
+          {rate > 0 && <div className="flex between"><span>Subtotal</span><span>{fmtMoney(taxable)}</span></div>}
+          {rate > 0 && (cgst + sgst > 0) && <div className="flex between"><span>CGST</span><span>{fmtMoney(cgst)}</span></div>}
           {rate > 0 && (cgst + sgst > 0) && <div className="flex between"><span>SGST</span><span>{fmtMoney(sgst)}</span></div>}
           {rate > 0 && (cgst + sgst === 0) && <div className="flex between"><span>IGST</span><span>{fmtMoney(igst)}</span></div>}
           <div className="flex between" style={{ fontWeight: 800, fontSize: 14, borderTop: '1px solid var(--border)', paddingTop: 8, marginTop: 4 }}>

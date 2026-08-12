@@ -44,7 +44,20 @@ export const api = {
   upload: (p, file) => {
     const fd = new FormData();
     fd.append('file', file);
-    return request(p, { method: 'POST', headers: {}, body: undefined });
+    const token = localStorage.getItem('pp_token');
+    const h = {};
+    if (token) h.Authorization = `Bearer ${token}`;
+    return fetch(BASE + p, { method: 'POST', headers: h, body: fd }).then(async (res) => {
+      const text = await res.text();
+      let data = null;
+      try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+      if (!res.ok) {
+        const err = new Error((data && data.error) || `Upload failed (${res.status})`);
+        err.status = res.status;
+        throw err;
+      }
+      return data;
+    });
   },
   // Export/csv downloads: fetch with the JWT header (plain <a href> links can't
   // send Authorization, which caused 401 Unauthorized), then trigger a download.

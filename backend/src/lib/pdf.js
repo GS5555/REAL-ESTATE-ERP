@@ -41,14 +41,15 @@ export function decodePng(buf) {
   const bpp = ch;
   const out = Buffer.alloc(width * height * 3);
   const rowBytes = stride;
+  let prev = Buffer.alloc(rowBytes);
   for (let r = 0; r < height; r++) {
     const f = raw[r * (rowBytes + 1)];
     const src = raw.slice(r * (rowBytes + 1) + 1, (r + 1) * (rowBytes + 1));
     const dst = Buffer.alloc(rowBytes);
     for (let i = 0; i < rowBytes; i++) {
       const a = i >= bpp ? dst[i - bpp] : 0;
-      const b = r > 0 ? raw[(r - 1) * (rowBytes + 1) + 1 + i] : 0;
-      const c = r > 0 && i >= bpp ? raw[(r - 1) * (rowBytes + 1) + 1 + i - bpp] : 0;
+      const b = r > 0 ? prev[i] : 0;
+      const c = r > 0 && i >= bpp ? prev[i - bpp] : 0;
       let v = src[i];
       if (f === 1) v += a;
       else if (f === 2) v += b;
@@ -60,6 +61,7 @@ export function decodePng(buf) {
       }
       dst[i] = v & 0xff;
     }
+    prev = dst;
     const rowOut = out.slice(r * width * 3, (r + 1) * width * 3);
     if (ch === 1) {
       for (let x = 0; x < width; x++) { rowOut[x * 3] = rowOut[x * 3 + 1] = rowOut[x * 3 + 2] = dst[x]; }
@@ -95,7 +97,7 @@ function wrapLines(s, maxw, scale = 4.2) {
 // opts: { title, subtitle, company, billTo, meta, rows, bank, footer, note }
 //   company: { name, tagline, logo (Buffer), address, gst, rera, phone, email, website }
 //   billTo:  { name, phone, email, address, gstin }
-export function pdf({ title = '', subtitle = '', company = null, billTo = null, meta = [], rows = [], bank = null, footer = '', note = '' } = {}) {
+export function pdf({ title = '', subtitle = '', company = null, billTo = null, meta = [], rows = [], tables = null, bank = null, footer = '', note = '' } = {}) {
   // Map common non-Latin-1 symbols to Latin-1-safe equivalents (Helvetica can't encode ₹/—/etc).
   const ascii = (s) => String(s ?? '').replace(/₹/g, 'Rs. ').replace(/—|–|‐/g, '-').replace(/['']/g, "'").replace(/[""]/g, '"').replace(/…/g, '...').replace(/[\u0080-\uFFFF]/g, '');
   const esc = (s) => ascii(s).replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
@@ -103,7 +105,7 @@ export function pdf({ title = '', subtitle = '', company = null, billTo = null, 
   let y = H - 74;
 
   const textAt = (s, size, x, yy, color = '0 0 0 rg') => {
-    chunks.push(color, 'BT', `/${size} F1`, `${x} ${yy} Td`, `(${esc(s)}) Tj`, 'ET');
+    chunks.push(color, 'BT', `/F1 ${size} Tf`, `${x} ${yy} Td`, `(${esc(s)}) Tj`, 'ET');
   };
 
   const hline = (x1, x2, yy) => {
@@ -182,25 +184,32 @@ export function pdf({ title = '', subtitle = '', company = null, billTo = null, 
     y -= 16;
   }
 
-  // ---------- table ----------
-  if (rows.length) {
-    const cols = Object.keys(rows[0]);
-    const colW = Math.min(140, Math.floor(515 / Math.max(1, cols.length)));
+  // ---------- table(s) ----------
+  const renderTable = (tableRows) => {
+    if (!tableRows.length) return;
+    const cols = Object.keys(tableRows[0]);
+    const colW = Math.min(160, Math.floor(515 / Math.max(1, cols.length)));
     const hx = 40;
     chunks.push('0.145 0.263 0.851 rg', `${hx} ${y - 14} 515 16 re f`);
     cols.forEach((c, i) => {
-      chunks.push('1 1 1 rg', 'BT', '/9 F1', `${hx + i * colW + 4} ${y - 3} Td`, `(${esc(c.toUpperCase())}) Tj`, 'ET');
+      chunks.push('1 1 1 rg', 'BT', `/F1 9 Tf`, `${hx + i * colW + 4} ${y - 3} Td`, `(${esc(c.toUpperCase())}) Tj`, 'ET');
     });
     y -= 24;
-    for (const r of rows.slice(0, 60)) {
+    for (const r of tableRows.slice(0, 60)) {
       if (y < 60) break;
       cols.forEach((c, i) => {
-        chunks.push('0 0 0 rg', 'BT', '/9 F1', `${hx + i * colW + 4} ${y} Td`, `(${esc(String(r[c] ?? '')).slice(0, 32)}) Tj`, 'ET');
+        chunks.push('0 0 0 rg', 'BT', `/F1 9 Tf`, `${hx + i * colW + 4} ${y} Td`, `(${esc(String(r[c] ?? '')).slice(0, 32)}) Tj`, 'ET');
       });
       y -= 15;
     }
     hline(hx, W - 40, y - 2);
     y -= 12;
+  };
+
+  if (Array.isArray(tables) && tables.length) {
+    for (const t of tables) renderTable(t.rows || t);
+  } else if (rows.length) {
+    renderTable(rows);
   }
 
   // ---------- bank details ----------
@@ -233,10 +242,12 @@ export function pdf({ title = '', subtitle = '', company = null, billTo = null, 
   const content = chunks.join('\n');
 
   // Build the file with correct byte offsets for every object (proper xref table).
+  const procSet = png ? '[/PDF/Text/ImageC]' : '[/PDF/Text]';
+  const xobj = png ? '/XObject<</Im6 6 0 R>>' : '';
   const objects = [
     `<</Type/Catalog/Pages 2 0 R>>`,
     `<</Type/Pages/Kids[3 0 R]/Count 1>>`,
-    `<</Type/Page/Parent 2 0 R/MediaBox[0 0 ${W} ${H}]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>/ProcSet[/PDF/Text/ImageC]/XObject<</Im6 6 0 R>>>>>>`
+    `<</Type/Page/Parent 2 0 R/MediaBox[0 0 ${W} ${H}]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>/ProcSet${procSet}${xobj}>>>>`
   ];
   if (png) {
     const raw = deflateSync(png.data);
