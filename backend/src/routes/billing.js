@@ -133,11 +133,12 @@ router.post('/billing/vendors', (req, res) => {
   if (!b.company_name) return res.status(400).json({ error: 'Company name required' });
   const vid = id();
   const gstState = gstStateCode(b.gstin);
-  run(`INSERT INTO vendors (id, company_id, company_name, gstin, gst_state_code, gst_state, contact_person, email, phone, alternate_phone, alternate_email, address, created_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+  run(`INSERT INTO vendors (id, company_id, company_name, gstin, gst_state_code, gst_state, contact_person, email, phone, alternate_phone, alternate_email, address, pincode, country, created_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     vid, billingCompanyId(req), String(b.company_name).trim(), b.gstin || null,
     b.gst_state_code || gstState || null, b.gst_state || null, b.contact_person || null,
-    b.email || null, b.phone || null, b.alternate_phone || null, b.alternate_email || null, b.address || null, ts());
+    b.email || null, b.phone || null, b.alternate_phone || null, b.alternate_email || null, b.address || null,
+    b.pincode || null, b.country || 'India', ts());
   audit({ company_id: billingCompanyId(req), user_id: req.user.id, user_name: req.user.name, action: 'vendor.create', entity: 'vendor', entity_id: vid, detail: { company_name: b.company_name } });
   res.json({ ok: true, id: vid });
 });
@@ -146,7 +147,7 @@ router.patch('/billing/vendors/:id', (req, res) => {
   if (!can(req.user, 'vendor.manage')) return res.status(403).json({ error: 'Forbidden' });
   const v = get('SELECT * FROM vendors WHERE id=? AND company_id=?', req.params.id, billingCompanyId(req));
   if (!v) return res.status(404).json({ error: 'Not found' });
-  const fields = ['company_name', 'gstin', 'gst_state_code', 'gst_state', 'contact_person', 'email', 'phone', 'alternate_phone', 'alternate_email', 'address'];
+  const fields = ['company_name', 'gstin', 'gst_state_code', 'gst_state', 'contact_person', 'email', 'phone', 'alternate_phone', 'alternate_email', 'address', 'pincode', 'country'];
   for (const f of fields) if (req.body[f] !== undefined) run(`UPDATE vendors SET ${f}=? WHERE id=?`, req.body[f], v.id);
   if (req.body.gstin !== undefined && req.body.gst_state_code === undefined) {
     const sc = gstStateCode(req.body.gstin);
@@ -175,7 +176,7 @@ router.delete('/billing/vendors/:id', (req, res) => {
    if (req.query.from) { where.push('i.created_at>=?'); args.push(req.query.from); }
    if (req.query.to) { where.push('i.created_at<=?'); args.push(req.query.to + 'T23:59:59'); }
    const rows = all(
-      `SELECT i.*, c.name customer_name, c.phone customer_phone, c.email customer_email, c.address customer_address, c.gstin customer_gstin, u.number unit_number, b.rera_ref booking_ref FROM invoices i
+      `SELECT i.*, c.name customer_name, c.phone customer_phone, c.email customer_email, c.address customer_address, c.state customer_state, c.state_code customer_state_code, c.pincode customer_pincode, c.country customer_country, c.gstin customer_gstin, u.number unit_number, b.rera_ref booking_ref FROM invoices i
        LEFT JOIN customers c ON c.id=i.customer_id LEFT JOIN bookings b ON b.id=i.booking_id LEFT JOIN units u ON u.id=b.unit_id
        WHERE ${where.join(' AND ')} ORDER BY i.created_at DESC LIMIT 200`, ...args);
     const items = all('SELECT * FROM invoice_items WHERE company_id=? AND invoice_id IN (SELECT id FROM invoices WHERE company_id=? LIMIT 200)', billingCompanyId(req), billingCompanyId(req));
@@ -378,7 +379,7 @@ router.get('/billing/invoices/:id/pdf', (req, res) => {
       name: customer?.name || '—',
       phone: customer?.phone || '',
       email: customer?.email || '',
-      address: customer?.address || '',
+      address: [customer?.address, customer?.pincode, [customer?.state, customer?.country].filter(Boolean).join(', ')].filter(Boolean).join(', '),
       gstin: customer?.gstin || ''
     },
     meta: [

@@ -47,6 +47,8 @@ router.post('/', (req, res) => {
   if (b.state !== undefined) run('UPDATE customers SET state=? WHERE id=?', b.state || null, cid);
   if (b.state_code !== undefined) run('UPDATE customers SET state_code=? WHERE id=?', b.state_code || null, cid);
   if (b.gstin !== undefined) run('UPDATE customers SET gstin=? WHERE id=?', b.gstin || null, cid);
+  if (b.pincode !== undefined) run('UPDATE customers SET pincode=? WHERE id=?', b.pincode || null, cid);
+  if (b.country !== undefined) run('UPDATE customers SET country=? WHERE id=?', b.country || null, cid);
   if (b.lead_id) {
     const lead = get('SELECT * FROM leads WHERE id=?', b.lead_id);
     if (lead) run('UPDATE leads SET status=? WHERE id=? AND status IN (\'new_lead\',\'qualified\',\'interested\')', 'negotiation', b.lead_id);
@@ -59,7 +61,7 @@ router.patch('/:id', (req, res) => {
   if (!can(req.user, 'customer.edit')) return res.status(403).json({ error: 'Forbidden' });
   const c = get('SELECT * FROM customers WHERE id=? AND company_id=?', req.params.id, req.user.company_id);
   if (!c) return res.status(404).json({ error: 'Not found' });
-  const fields = ['name', 'phone', 'email', 'address', 'pan', 'aadhaar', 'loyalty_points', 'referred_by', 'state', 'state_code', 'gstin'];
+  const fields = ['name', 'phone', 'email', 'address', 'pan', 'aadhaar', 'loyalty_points', 'referred_by', 'state', 'state_code', 'gstin', 'pincode', 'country'];
   for (const f of fields) if (req.body[f] !== undefined) run(`UPDATE customers SET ${f}=? WHERE id=?`, req.body[f], c.id);
   if (req.body.kyc_docs !== undefined) run('UPDATE customers SET kyc_docs=? WHERE id=?', JSON.stringify(req.body.kyc_docs), c.id);
   audit({ company_id: req.user.company_id, user_id: req.user.id, user_name: req.user.name, action: 'customer.update', entity: 'customer', entity_id: c.id, detail: Object.keys(req.body || {}) });

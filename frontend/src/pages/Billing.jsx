@@ -3,20 +3,10 @@ import { useStore } from '../store';
 import { api, fmtMoney, fmtDate, fmtDateTime } from '../api';
 import { Card, Button, Badge, Field, Input, Select, DataTable, Tabs, Stat, Empty, Modal, Switch } from '../components/ui';
 import { useToast } from '../components/ui';
+import { INDIAN_STATES, COUNTRIES } from '../constants';
 
 const STATUS_TONES = { paid: 'green', overdue: 'red', sent: 'blue', draft: 'gray', cancelled: 'gray' };
 const CHANNELS = ['email', 'whatsapp', 'sms', 'pdf'];
-
-const INDIAN_STATES = [
-  ['Andhra Pradesh', '37'], ['Arunachal Pradesh', '12'], ['Assam', '18'], ['Bihar', '10'],
-  ['Chhattisgarh', '22'], ['Delhi', '07'], ['Goa', '30'], ['Gujarat', '24'],
-  ['Haryana', '06'], ['Himachal Pradesh', '02'], ['Jammu & Kashmir', '01'], ['Jharkhand', '20'],
-  ['Karnataka', '29'], ['Kerala', '32'], ['Madhya Pradesh', '23'], ['Maharashtra', '27'],
-  ['Manipur', '14'], ['Meghalaya', '17'], ['Mizoram', '15'], ['Nagaland', '13'],
-  ['Odisha', '21'], ['Puducherry', '34'], ['Punjab', '03'], ['Rajasthan', '08'],
-  ['Sikkim', '11'], ['Tamil Nadu', '33'], ['Telangana', '36'], ['Tripura', '16'],
-  ['Uttar Pradesh', '09'], ['Uttarakhand', '05'], ['West Bengal', '19']
-];
 
 function gstStateFromGstin(gstin) {
   const g = String(gstin || '').trim().toUpperCase();
@@ -475,8 +465,8 @@ export default function Billing() {
             <Field label="Company Name" full><Input value={vendor.company_name || ''} onChange={(e) => setVendor({ ...vendor, company_name: e.target.value })} placeholder="e.g. Tata Steel Ltd" /></Field>
             <Field label="GSTIN" full><Input value={vendor.gstin || ''} onChange={(e) => setVendor({ ...vendor, gstin: e.target.value, gst_state_code: gstStateFromGstin(e.target.value) })} placeholder="27AAACX1234F1Z5" /></Field>
             <Field label="GST State">
-              <Select value={vendor.gst_state_code || (vendor.gstin ? gstStateFromGstin(vendor.gstin) : '')} onChange={(e) => { const [name, code] = (e.target.value || '').split('|'); setVendor({ ...vendor, gst_state_code: code || '', gst_state: name || '' }); }}>
-                <option value="">Select state…</option>
+              <Select value={(vendor.gst_state || '') + '|' + (vendor.gst_state_code || (vendor.gstin ? gstStateFromGstin(vendor.gstin) : ''))} onChange={(e) => { const [name, code] = (e.target.value || '').split('|'); setVendor({ ...vendor, gst_state_code: code || '', gst_state: name || '' }); }}>
+                <option value="|">Select state…</option>
                 {INDIAN_STATES.map(([name, code]) => <option key={code} value={`${name}|${code}`}>{name} ({code})</option>)}
               </Select>
             </Field>
@@ -486,6 +476,18 @@ export default function Billing() {
             <Field label="Alternate Phone"><Input value={vendor.alternate_phone || ''} onChange={(e) => setVendor({ ...vendor, alternate_phone: e.target.value })} /></Field>
             <Field label="Alternate Email"><Input value={vendor.alternate_email || ''} onChange={(e) => setVendor({ ...vendor, alternate_email: e.target.value })} /></Field>
             <Field label="Address" full><Input value={vendor.address || ''} onChange={(e) => setVendor({ ...vendor, address: e.target.value })} /></Field>
+            <Field label="Pin Code"><Input value={vendor.pincode || ''} onChange={(e) => setVendor({ ...vendor, pincode: e.target.value })} /></Field>
+            <Field label="State">
+              <Select value={(vendor.gst_state || 'Maharashtra') + '|' + (vendor.gst_state_code || '27')} onChange={(e) => { const [name, code] = (e.target.value || '').split('|'); setVendor({ ...vendor, gst_state_code: code || '', gst_state: name || '' }); }}>
+                <option value="">Select state…</option>
+                {INDIAN_STATES.map(([name, code]) => <option key={code} value={`${name}|${code}`}>{name} ({code})</option>)}
+              </Select>
+            </Field>
+            <Field label="Country">
+              <Select value={vendor.country || 'India'} onChange={(e) => setVendor({ ...vendor, country: e.target.value })}>
+                {COUNTRIES.map((c) => <option key={c} value={c}>{c}</option>)}
+              </Select>
+            </Field>
           </div>
         </Modal>
       )}
@@ -558,6 +560,7 @@ function InvoicePreview({ inv, company, onClose }) {
           <div className="small muted" style={{ fontWeight: 700, marginBottom: 4 }}>BILL TO</div>
           <b>{inv.customer_name}</b>
           {inv.customer_address && <div className="small muted">{inv.customer_address}</div>}
+          {(inv.customer_pincode || inv.customer_state) && <div className="small muted">{[inv.customer_pincode, inv.customer_state, inv.customer_country].filter(Boolean).join(', ')}</div>}
           <div className="small muted">Phone: {inv.customer_phone || '—'}</div>
           <div className="small muted">{inv.customer_email || ''}</div>
           {inv.customer_gstin && <div className="small muted">GSTIN: {inv.customer_gstin}</div>}

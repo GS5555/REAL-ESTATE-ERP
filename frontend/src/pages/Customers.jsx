@@ -5,6 +5,7 @@ import { api, fmtMoney } from '../api';
 import { Card, Button, Badge, DataTable, Modal, Field, Input, Select, Empty } from '../components/ui';
 import { QRCode } from '../components/qr';
 import { useToast } from '../components/ui';
+import { INDIAN_STATES, COUNTRIES } from '../constants';
 
 const KYC_TONES = { pending: 'amber', verified: 'green', rejected: 'red' };
 
@@ -84,6 +85,18 @@ export default function Customers() {
             <Field label="PAN"><Input value={form.pan || ''} onChange={(e) => setForm({ ...form, pan: e.target.value })} /></Field>
             <Field label="Referred by (phone/name)" full><Input value={form.referred_by || ''} onChange={(e) => setForm({ ...form, referred_by: e.target.value })} /></Field>
             <Field label="Address" full><Input value={form.address || ''} onChange={(e) => setForm({ ...form, address: e.target.value })} /></Field>
+            <Field label="Pin Code"><Input value={form.pincode || ''} onChange={(e) => setForm({ ...form, pincode: e.target.value })} /></Field>
+            <Field label="State">
+              <Select value={(form.state || (form.state_code === '27' ? 'Maharashtra' : '') || 'Maharashtra') + '|' + (form.state_code || '27')} onChange={(e) => { const [name, code] = (e.target.value || '').split('|'); setForm({ ...form, state_code: code || '', state: name || '' }); }}>
+                <option value="">Select state…</option>
+                {INDIAN_STATES.map(([name, code]) => <option key={code} value={`${name}|${code}`}>{name} ({code})</option>)}
+              </Select>
+            </Field>
+            <Field label="Country">
+              <Select value={form.country || 'India'} onChange={(e) => setForm({ ...form, country: e.target.value })}>
+                {COUNTRIES.map((c) => <option key={c} value={c}>{c}</option>)}
+              </Select>
+            </Field>
           </div>
         </Modal>
       )}

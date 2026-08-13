@@ -971,6 +971,10 @@ export function initSchema() {
   ensureColumn('customers', 'state', 'TEXT');
   ensureColumn('customers', 'state_code', 'TEXT');
   ensureColumn('customers', 'gstin', 'TEXT');
+  ensureColumn('customers', 'pincode', 'TEXT');
+  ensureColumn('customers', 'country', "TEXT DEFAULT 'India'");
+  ensureColumn('vendors', 'pincode', 'TEXT');
+  ensureColumn('vendors', 'country', "TEXT DEFAULT 'India'");
   ensureColumn('invoices', 'taxable_amount', 'REAL');
   ensureColumn('invoice_items', 'cgst', 'REAL DEFAULT 0');
   ensureColumn('invoice_items', 'sgst', 'REAL DEFAULT 0');
