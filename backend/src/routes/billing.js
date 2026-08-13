@@ -422,6 +422,17 @@ router.post('/billing/invoices/:id/send', (req, res) => {
   res.json({ ok: true, log });
 });
 
+// ---- Cancel invoice (sale cancelled) ----
+router.post('/billing/invoices/:id/cancel', (req, res) => {
+  if (!can(req.user, 'finance.invoice')) return res.status(403).json({ error: 'Forbidden' });
+  const inv = get('SELECT * FROM invoices WHERE id=? AND company_id=?', req.params.id, billingCompanyId(req));
+  if (!inv) return res.status(404).json({ error: 'Not found' });
+  if (inv.status === 'cancelled') return res.status(400).json({ error: 'Invoice already cancelled' });
+  run('UPDATE invoices SET status=? WHERE id=?', 'cancelled', inv.id);
+  audit({ company_id: billingCompanyId(req), user_id: req.user.id, user_name: req.user.name, action: 'invoice.cancel', entity: 'invoice', entity_id: inv.id, detail: { previous_status: inv.status }, module: 'billing' });
+  res.json({ ok: true });
+});
+
 // ---- Payment due / overdue reminders ----
 router.get('/billing/reminders/pending', (req, res) => {
   if (!can(req.user, 'finance.view')) return res.status(403).json({ error: 'Forbidden' });

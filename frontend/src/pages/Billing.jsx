@@ -119,6 +119,12 @@ export default function Billing() {
     catch (e) { toast(e.message, 'error'); }
   };
 
+  const cancelInvoice = async (r) => {
+    if (!confirm(`Cancel invoice ${r.number}? The sale will be marked as cancelled.`)) return;
+    try { await api.post(`/billing/invoices/${r.id}/cancel`); toast(`Invoice ${r.number} cancelled`, 'success'); load(); }
+    catch (e) { toast(e.message, 'error'); }
+  };
+
   const runReminders = async () => {
     try { const r = await api.post('/billing/reminders/run'); toast(`${r.sent} reminders sent`, 'success'); load(); }
     catch (e) { toast(e.message, 'error'); }
@@ -283,6 +289,7 @@ export default function Billing() {
                     <Button sm ghost onClick={() => api.download(`/billing/invoices/${r.id}/pdf`).catch((e) => toast(e.message, 'error'))}>PDF</Button>
                     <Button sm ghost onClick={() => api.shareFile(`/billing/invoices/${r.id}/pdf`, null, `Invoice ${r.number}`).then((m) => { if (m === 'downloaded') toast('Sharing not available — file downloaded', 'info'); }).catch((e) => toast(e.message, 'error'))}>Share</Button>
                     <Button sm variant="primary" onClick={() => sendInvoice(r)}>Send</Button>
+                    {r.status !== 'cancelled' && <Button sm ghost onClick={() => cancelInvoice(r)}>Cancel</Button>}
                   </div>
                 ) }
               ]}
