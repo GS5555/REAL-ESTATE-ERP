@@ -364,6 +364,19 @@ export default function Billing() {
                 {customers.map((c) => <option key={c.id} value={c.id}>{c.name}{c.state_code ? ` (${c.state_code})` : ''}{c.gstin ? ' · GST' : ''}</option>)}
               </Select>
             </Field>
+            {inv.customer_id && (() => {
+              const cust = customers.find((c) => c.id === inv.customer_id);
+              const line1 = [cust?.address, cust?.pincode].filter(Boolean).join(', ');
+              const line2 = [cust?.state, cust?.country].filter(Boolean).join(', ');
+              return (
+                <div className="full" style={{ fontSize: 12.5, background: 'var(--bg-soft, #f6f8fb)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px' }}>
+                  <div className="small muted" style={{ fontWeight: 700, marginBottom: 2 }}>BILLING ADDRESS</div>
+                  <div>{line1 || '—'}{line1 && line2 ? ', ' : ''}{line2}</div>
+                  <div className="muted">{cust?.phone || ''}{cust?.email ? ` · ${cust.email}` : ''}</div>
+                  {cust?.gstin && <div className="muted">GSTIN: {cust.gstin}</div>}
+                </div>
+              );
+            })()}
             <Field label="Number"><Input value={inv.number} onChange={(e) => setInv({ ...inv, number: e.target.value })} placeholder="INV-…" /></Field>
             <Field label="Taxable Amount (₹) — used when no items"><Input type="number" value={inv.amount} onChange={(e) => setInv({ ...inv, amount: e.target.value })} /></Field>
             <Field label="GST Rate (%)"><Input type="number" value={inv.gst} onChange={(e) => setInv({ ...inv, gst: e.target.value })} /></Field>
